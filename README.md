@@ -56,26 +56,45 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 | Real | Byte | Meaning |
 |------|------|---------|
 | R0 | 0x00 | fixed |
-| R1 | 0x00 | fixed |
-| R2 | 0x00..0x04 | command (00=power, 01=mode, 02=temp+, 03=temp−, 04=swing) |
-| R3 | 0x3A / 0x7A | 0x3A=COOL, 0x7A=other modes; off → `R3 &= ~0x02` (0x78); swing → see table below |
+| R1 | 0x00 | fixed (Light=bit0, Turbo=bit3, not exposed yet) |
+| R2 | 0x00..0x05 | command (00=power, 01=mode, 02=temp+, 03=temp−, 04=swing, 05=fan) |
+| R3 | bitfield | see below |
 | R4 | `((mode_code<<1)<<4) \| (temp−16)` | mode_code: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4 |
 | R5 | 0x55 | fixed → wire `AA 55` |
 
+R3 bitfield (LSB): `Swing(2) | AirFlow(1) | Fan(2)` — Power at bit1, bits:
+
+| Bit(s) | Field | Values |
+|--------|-------|--------|
+| 0 | reserved | 0 |
+| 1 | Power | 1=on, 0=off |
+| 2-3 | Swing | 0b10=off, 0b01=on |
+| 4 | AirFlow | 1 (fixed in captures) |
+| 5-6 | Fan | 0b00=Auto, 0b01=High, 0b10=Med, 0b11=Low |
+| 7 | reserved | 0 |
+
+So `R3 = (power?0x02:0) | (swing_on?0x04:0x08) | 0x10 | (fan_bits<<5)`.
+
 ### Swing (шторка, R2 = 0x04)
 
-Swing uses `R2 = 0x04`. The R3 base depends on the mode; swing ON = `R3 ^ 0x0C`:
+Swing uses `R2 = 0x04`. Swinging swaps bits 2-3 (`0x08`↔`0x04`). DRY has no swing.
+When swing is enabled, every frame (mode/temp/power/fan) carries the swing bits,
+matching the original remote.
 
-| Mode | R3 base | swing OFF | swing ON |
-|------|---------|-----------|----------|
-| AUTO | 0x7A | `R2=04 R3=7A` | `R2=04 R3=76` |
-| COOL | 0x3A | `R2=04 R3=3A` | `R2=04 R3=36` |
-| FAN  | 0x3A | `R2=04 R3=3A` | `R2=04 R3=36` |
-| HEAT | 0x7A | `R2=04 R3=7A` | `R2=04 R3=76` |
+### Fan speed (R2 = 0x05)
 
-DRY has no swing. R4/R5 stay the same as the equivalent mode/temp frame.
-When swing is enabled, normal mode/temp/power frames also carry the `0x0C` bit in R3
-(`R3 ^= 0x0C`), matching the original remote.
+Fan speed is a full-state command `R2 = 0x05` that only changes the Fan bits in R3
+(`R4` stays as the current mode/temp). Mapping:
+
+| HA fan_mode | R3 bits 5-6 | R3 (power on, swing off) |
+|-------------|-------------|--------------------------|
+| AUTO  | 0b00 | 0x1A |
+| HIGH  | 0b01 | 0x3A |
+| MEDIUM| 0b10 | 0x5A |
+| LOW   | 0b11 | 0x7A |
+
+Confirmed by capture cycle Auto→High→Med→Low in FAN 25°C, and the same frames with
+swing on (`0x16/0x36/0x56/0x76`).
 
 Sample frames (wire):
 

@@ -23,18 +23,22 @@ void RapidAcClimate::setup() {
   this->last_power_ = (this->mode != climate::CLIMATE_MODE_OFF);
   this->last_mode_ = this->mode;
   this->last_temp_ = this->target_temperature;
+  this->last_fan_ = this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO);
   this->last_swing_ = (this->swing_mode == climate::CLIMATE_SWING_VERTICAL);
 }
 
 void RapidAcClimate::transmit_state() {
   bool power = (this->mode != climate::CLIMATE_MODE_OFF);
   bool swing_on = (this->swing_mode == climate::CLIMATE_SWING_VERTICAL);
+  climate::ClimateFanMode fan = this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO);
 
   uint8_t command = 0x01;
   if (power != this->last_power_) {
     command = 0x00;
   } else if (power && swing_on != this->last_swing_) {
     command = 0x04;
+  } else if (power && fan != this->last_fan_) {
+    command = 0x05;
   } else if (power) {
     if (this->mode != this->last_mode_) {
       command = 0x01;
@@ -46,45 +50,40 @@ void RapidAcClimate::transmit_state() {
   }
 
   climate::ClimateMode frame_mode = power ? this->mode : this->last_mode_;
-  this->send_frame_(command, power, frame_mode, this->target_temperature, swing_on);
+  this->send_frame_(command, power, frame_mode, this->target_temperature, fan, swing_on);
 
   this->last_power_ = power;
   if (power) {
     this->last_mode_ = this->mode;
+    this->last_fan_ = fan;
   }
   this->last_temp_ = this->target_temperature;
   this->last_swing_ = swing_on;
 }
 
 void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMode mode,
-                                 float temp, bool swing_on) {
-  uint8_t r3;
-  if (command == 0x04) {
-    switch (mode) {
-      case climate::CLIMATE_MODE_COOL:
-      case climate::CLIMATE_MODE_FAN_ONLY:
-        r3 = 0x3A;
-        break;
-      default:
-        r3 = 0x7A;
-        break;
-    }
-    if (swing_on) {
-      r3 ^= 0x0C;
-    }
-  } else {
-    if (mode == climate::CLIMATE_MODE_COOL) {
-      r3 = 0x3A;
-    } else {
-      r3 = 0x7A;
-    }
-    if (!power) {
-      r3 &= ~0x02;
-    }
-    if (swing_on && power) {
-      r3 ^= 0x0C;
-    }
+                                 float temp, climate::ClimateFanMode fan, bool swing_on) {
+  uint8_t fan_bits;
+  switch (fan) {
+    case climate::CLIMATE_FAN_HIGH:
+      fan_bits = 0b01;
+      break;
+    case climate::CLIMATE_FAN_MEDIUM:
+      fan_bits = 0b10;
+      break;
+    case climate::CLIMATE_FAN_LOW:
+      fan_bits = 0b11;
+      break;
+    default:
+      fan_bits = 0b00;
+      break;
   }
+
+  uint8_t r3 = 0;
+  r3 |= (power ? (uint8_t) 0x02 : 0x00);
+  r3 |= (swing_on ? (uint8_t) 0x04 : 0x08);  // swing: 0b01=on, 0b10=off
+  r3 |= 0x10;                                 // AirFlow: fixed 1
+  r3 |= fan_bits << 5;
 
   uint8_t mode_code;
   switch (mode) {
