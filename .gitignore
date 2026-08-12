@@ -1,0 +1,6 @@
+# Secrets (WiFi/API/OTA credentials) — never commit
+secrets.yaml
+
+# ESPHome build artifacts
+.esphome/
+*.log
