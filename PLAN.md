@@ -52,19 +52,21 @@ R4/R5 как у текущего режима/температуры. Решен
 ## Текущее состояние кода
 
 Реализовано: power, mode, temp±, swing (cmd 0x04, маска `{OFF, VERTICAL}`, `last_swing_`),
-fan speed (cmd 0x05, маска `{AUTO,LOW,MEDIUM,HIGH}`, `last_fan_`, R3-битфилд).
+fan speed (cmd 0x05, маска `{AUTO,LOW,MEDIUM,HIGH}`, `last_fan_`, R3-битфилд),
+sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom preset
+`light`, bit0 R1).
 
 Недочёты:
-- Не реализованы: sleep, turbo, light, timer, airflow, hold (жду захваты).
-- Проект вне git → нет версионирования/откатов. (TODO: git init)
+- Не реализован: timer (отложен — `R2=0x06`, часы в `R0=0xA0|h`, README).
+- README содержит неполные сэмплы кадров (устарели после битфилда).
+- Проект в git (инициализирован), remote = `night-gnida/rapid-ac` (private).
 
 ## Открытые решения
 
-1. ~~**Дефолт вентилятора**: Auto (0b00) или сохранить текущее (COOL=High, иначе Low)?~~
-   → **Решено: Auto**. R3 пересобран в битфилд; старые «базы 3A/7A» убраны.
-2. **Git**: инициализировать репозиторий в `rapid_ac` для поэтапных правок с откатом?
-3. **Метод съёмки**: как конвертируются исходники из лога (raw → Pronto)?
-4. **Кнопки**: есть ли на пульте AirFlow / Hold?
+1. ~~**Дефолт вентилятора**~~ → **Решено: Auto**. R3 пересобран в битфилд.
+2. ~~**Git**~~ → репозиторий создан: `night-gnida/rapid-ac`.
+3. ~~**Метод съёмки**~~ → Pronto-строки из лога `remote.pronto` в ESPHome.
+4. **Кнопки**: AirFlow / Hold — на пульте отсутствуют (по уточнению пользователя).
 
 ## Этап 0 — первичные действия
 
@@ -99,14 +101,16 @@ fan speed (cmd 0x05, маска `{AUTO,LOW,MEDIUM,HIGH}`, `last_fan_`, R3-бит
     `(sleep)|(power<<1)|(swing<<2)|(1<<4)|(fan<<5)`.
 - [ ] Проверка на сервере; сравнить отправленные карты с захватами.
 
-## Этап 3 — Sleep / Turbo / Light
+## Этап 3 — Sleep / Turbo / Light ✅
 
-- R1 битфилд: `(light<<0)|(turbo<<3)`; R3 bit0 = sleep.
-- Команды `09 / 0A / 0B`, toggle-логика, `last_sleep_`, `last_turbo_`, `last_light_`.
+- [x] R1 битфилд: `(light<<0)|(turbo<<3)`; R3 bit0 = sleep.
+- [x] Команды `09 / 0A / 0B`, toggle-логика, `last_sleep_`, `last_turbo_`, `last_light_`.
+- [x] Пресеты HA: `Sleep`, `Boost`, custom `light`.
 
 ## Этап 4 — Timer (R2=0x06)
 
-- По Goodweather — команда без изменения полей. Доработать, если захваты покажут иначе.
+- **Отложен.** По захватам: команда `0x06`, часы в `R0 = 0xA0 | h` (1ч=`A1`, 2ч=`A2`).
+  Реализация через `number`/`switch` — попробуем позже. В README задокументировано.
 
 ## Этап 5 — HEAT / контроль
 

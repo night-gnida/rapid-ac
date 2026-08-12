@@ -25,12 +25,18 @@ void RapidAcClimate::setup() {
   this->last_temp_ = this->target_temperature;
   this->last_fan_ = this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO);
   this->last_swing_ = (this->swing_mode == climate::CLIMATE_SWING_VERTICAL);
+  this->last_sleep_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_SLEEP);
+  this->last_turbo_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST);
+  this->last_light_ = (this->get_custom_preset() == "light");
 }
 
 void RapidAcClimate::transmit_state() {
   bool power = (this->mode != climate::CLIMATE_MODE_OFF);
   bool swing_on = (this->swing_mode == climate::CLIMATE_SWING_VERTICAL);
   climate::ClimateFanMode fan = this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO);
+  bool sleep_on = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_SLEEP);
+  bool turbo_on = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST);
+  bool light_on = (this->get_custom_preset() == "light");
 
   uint8_t command = 0x01;
   if (power != this->last_power_) {
@@ -39,6 +45,12 @@ void RapidAcClimate::transmit_state() {
     command = 0x04;
   } else if (power && fan != this->last_fan_) {
     command = 0x05;
+  } else if (power && sleep_on != this->last_sleep_) {
+    command = 0x09;
+  } else if (power && turbo_on != this->last_turbo_) {
+    command = 0x0A;
+  } else if (power && light_on != this->last_light_) {
+    command = 0x0B;
   } else if (power) {
     if (this->mode != this->last_mode_) {
       command = 0x01;
@@ -50,7 +62,8 @@ void RapidAcClimate::transmit_state() {
   }
 
   climate::ClimateMode frame_mode = power ? this->mode : this->last_mode_;
-  this->send_frame_(command, power, frame_mode, this->target_temperature, fan, swing_on);
+  this->send_frame_(command, power, frame_mode, this->target_temperature, fan, swing_on,
+                    sleep_on, turbo_on, light_on);
 
   this->last_power_ = power;
   if (power) {
@@ -59,10 +72,14 @@ void RapidAcClimate::transmit_state() {
   }
   this->last_temp_ = this->target_temperature;
   this->last_swing_ = swing_on;
+  this->last_sleep_ = sleep_on;
+  this->last_turbo_ = turbo_on;
+  this->last_light_ = light_on;
 }
 
 void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMode mode,
-                                 float temp, climate::ClimateFanMode fan, bool swing_on) {
+                                 float temp, climate::ClimateFanMode fan, bool swing_on,
+                                 bool sleep_on, bool turbo_on, bool light_on) {
   uint8_t fan_bits;
   switch (fan) {
     case climate::CLIMATE_FAN_HIGH:
@@ -79,10 +96,15 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
       break;
   }
 
+  uint8_t r1 = 0;
+  r1 |= (light_on ? (uint8_t) 0x01 : 0x00);  // Light: bit0
+  r1 |= (turbo_on ? (uint8_t) 0x08 : 0x00);  // Turbo: bit3
+
   uint8_t r3 = 0;
-  r3 |= (power ? (uint8_t) 0x02 : 0x00);
-  r3 |= (swing_on ? (uint8_t) 0x04 : 0x08);  // swing: 0b01=on, 0b10=off
-  r3 |= 0x10;                                 // AirFlow: fixed 1
+  r3 |= (sleep_on ? (uint8_t) 0x01 : 0x00);  // Sleep: bit0
+  r3 |= (power ? (uint8_t) 0x02 : 0x00);     // Power: bit1
+  r3 |= (swing_on ? (uint8_t) 0x04 : 0x08);  // Swing: 0b01=on, 0b10=off
+  r3 |= 0x10;                                // AirFlow: fixed 1
   r3 |= fan_bits << 5;
 
   uint8_t mode_code;
@@ -110,7 +132,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   uint8_t temp_val = (uint8_t) roundf(temp) - 16;
   uint8_t r4 = (uint8_t)((mode_code << 1) << 4) | temp_val;
 
-  const uint8_t real[6] = {0x00, 0x00, command, r3, r4, 0x55};
+  const uint8_t real[6] = {0x00, r1, command, r3, r4, 0x55};
   uint8_t wire[12];
   for (int i = 0; i < 6; i++) {
     wire[i * 2] = (uint8_t)~real[i];
@@ -139,10 +161,10 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   call.set_send_times(1);
   call.perform();
 
-  ESP_LOGV(TAG, "Sent cmd=0x%02X power=%d mode=%d temp=%.0f wire=FF 00 FF 00 %02X %02X %02X %02X "
-                "%02X %02X AA 55",
-           command, power ? 1 : 0, (int) mode, temp, wire[4], wire[5], wire[6], wire[7], wire[8],
-           wire[9]);
+  ESP_LOGV(TAG, "Sent cmd=0x%02X power=%d mode=%d temp=%.0f wire=%02X %02X %02X %02X %02X %02X "
+                "%02X %02X %02X %02X %02X %02X",
+           command, power ? 1 : 0, (int) mode, temp, wire[0], wire[1], wire[2], wire[3], wire[4],
+           wire[5], wire[6], wire[7], wire[8], wire[9], wire[10], wire[11]);
 }
 
 }  // namespace rapid_ac

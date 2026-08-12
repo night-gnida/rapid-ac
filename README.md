@@ -55,46 +55,44 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 
 | Real | Byte | Meaning |
 |------|------|---------|
-| R0 | 0x00 | fixed |
-| R1 | 0x00 | fixed (Light=bit0, Turbo=bit3, not exposed yet) |
-| R2 | 0x00..0x05 | command (00=power, 01=mode, 02=temp+, 03=temp−, 04=swing, 05=fan) |
+| R0 | 0x00 | fixed (timer hours `0xA0\|h` — see Timer, not exposed yet) |
+| R1 | bitfield | Light=bit0, Turbo=bit3 |
+| R2 | 0x00..0x0B | command (00=power, 01=mode, 02=temp+, 03=temp−, 04=swing, 05=fan, 06=timer, 09=sleep, 0A=turbo, 0B=light) |
 | R3 | bitfield | see below |
 | R4 | `((mode_code<<1)<<4) \| (temp−16)` | mode_code: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4 |
 | R5 | 0x55 | fixed → wire `AA 55` |
 
-R3 bitfield (LSB): `Swing(2) | AirFlow(1) | Fan(2)` — Power at bit1, bits:
+R1 bitfield (LSB):
+
+| Bit | Field | Values |
+|-----|-------|--------|
+| 0 | Light (дисплей) | 1=display off |
+| 3 | Turbo | 1=on |
+
+R3 bitfield (LSB): `Sleep | Power | Swing(2) | AirFlow | Fan(2)` — bits:
 
 | Bit(s) | Field | Values |
 |--------|-------|--------|
-| 0 | reserved | 0 |
+| 0 | Sleep | 1=on |
 | 1 | Power | 1=on, 0=off |
 | 2-3 | Swing | 0b10=off, 0b01=on |
 | 4 | AirFlow | 1 (fixed in captures) |
 | 5-6 | Fan | 0b00=Auto, 0b01=High, 0b10=Med, 0b11=Low |
 | 7 | reserved | 0 |
 
-So `R3 = (power?0x02:0) | (swing_on?0x04:0x08) | 0x10 | (fan_bits<<5)`.
+So `R1 = (light?0x01:0) | (turbo?0x08:0)` and
+`R3 = (sleep?0x01:0) | (power?0x02:0) | (swing_on?0x04:0x08) | 0x10 | (fan_bits<<5)`.
 
-### Swing (шторка, R2 = 0x04)
+### Home Assistant mapping
 
-Swing uses `R2 = 0x04`. Swinging swaps bits 2-3 (`0x08`↔`0x04`). DRY has no swing.
-When swing is enabled, every frame (mode/temp/power/fan) carries the swing bits,
-matching the original remote.
-
-### Fan speed (R2 = 0x05)
-
-Fan speed is a full-state command `R2 = 0x05` that only changes the Fan bits in R3
-(`R4` stays as the current mode/temp). Mapping:
-
-| HA fan_mode | R3 bits 5-6 | R3 (power on, swing off) |
-|-------------|-------------|--------------------------|
-| AUTO  | 0b00 | 0x1A |
-| HIGH  | 0b01 | 0x3A |
-| MEDIUM| 0b10 | 0x5A |
-| LOW   | 0b11 | 0x7A |
-
-Confirmed by capture cycle Auto→High→Med→Low in FAN 25°C, and the same frames with
-swing on (`0x16/0x36/0x56/0x76`).
+| Rapid feature | HA control | Frame |
+|---------------|------------|-------|
+| Power / Mode / Temp | climate standard | 0x00/0x01/0x02/0x03 |
+| Swing (шторка) | swing mode `VERTICAL` | 0x04, bits 2-3 |
+| Fan speed | fan mode `AUTO/LOW/MEDIUM/HIGH` | 0x05, bits 5-6 |
+| Sleep | preset `Sleep` | 0x09, R3 bit0 |
+| Turbo | preset `Boost` | 0x0A, R1 bit3 |
+| Light (дисплей) | custom preset `light` | 0x0B, R1 bit0 |
 
 Sample frames (wire):
 
