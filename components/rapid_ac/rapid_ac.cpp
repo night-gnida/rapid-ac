@@ -168,7 +168,9 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
 }
 
 bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
+  ESP_LOGD(TAG, "on_receive: size=%d index=%d", (int) data.size(), (int) data.get_index());
   if (!data.expect_item(HDR_MARK, HDR_SPACE)) {
+    ESP_LOGD(TAG, "reject: header mismatch (idx=%d)", (int) data.get_index());
     return false;
   }
 
@@ -181,6 +183,7 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
       } else if (data.expect_item(BIT_MARK, ONE_SPACE)) {
         byte |= (uint8_t) 1 << bit;
       } else {
+        ESP_LOGD(TAG, "reject: bit read fail byte=%d bit=%d (idx=%d)", i, bit, (int) data.get_index());
         return false;
       }
     }
@@ -188,14 +191,17 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   }
 
   if (!data.expect_item(BIT_MARK, FOOTER_SPACE)) {
+    ESP_LOGD(TAG, "reject: footer space mismatch (idx=%d)", (int) data.get_index());
     return false;
   }
   if (!data.expect_mark(BIT_MARK)) {
+    ESP_LOGD(TAG, "reject: final mark mismatch (idx=%d)", (int) data.get_index());
     return false;
   }
 
   for (int i = 0; i < 6; i++) {
     if (wire[i * 2] != (uint8_t) ~wire[i * 2 + 1]) {
+      ESP_LOGD(TAG, "reject: pair complement fail i=%d %02X vs ~%02X", i, wire[i * 2], wire[i * 2 + 1]);
       return false;
     }
   }
@@ -287,6 +293,9 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   this->last_turbo_ = turbo_on;
   this->last_light_ = light_on;
 
+  ESP_LOGD(TAG, "accepted: R1=%02X R3=%02X R4=%02X power=%d mode=%d temp=%.0f fan=%d swing=%d",
+           r1, r3, r4, power ? 1 : 0, (int) mode, this->target_temperature, (int) fan_bits,
+           swing_on ? 1 : 0);
   this->publish_state();
   return true;
 }
