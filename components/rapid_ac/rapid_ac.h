@@ -19,6 +19,7 @@ class RapidAcClimate : public climate_ir::ClimateIR {
 
   void setup() override;
   void transmit_state() override;
+  bool on_receive(remote_base::RemoteReceiveData data) override;
 
  private:
   void send_frame_(uint8_t command, bool power, climate::ClimateMode mode, float temp,

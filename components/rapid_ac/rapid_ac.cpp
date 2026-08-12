@@ -167,5 +167,129 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
            wire[5], wire[6], wire[7], wire[8], wire[9], wire[10], wire[11]);
 }
 
+bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
+  if (!data.expect_item(HDR_MARK, HDR_SPACE)) {
+    return false;
+  }
+
+  uint8_t wire[12];
+  for (int i = 0; i < 12; i++) {
+    uint8_t byte = 0;
+    for (int bit = 0; bit < 8; bit++) {
+      if (data.expect_item(BIT_MARK, ZERO_SPACE)) {
+        // bit is 0
+      } else if (data.expect_item(BIT_MARK, ONE_SPACE)) {
+        byte |= (uint8_t) 1 << bit;
+      } else {
+        return false;
+      }
+    }
+    wire[i] = byte;
+  }
+
+  if (!data.expect_item(BIT_MARK, FOOTER_SPACE)) {
+    return false;
+  }
+  if (!data.expect_mark(BIT_MARK)) {
+    return false;
+  }
+
+  for (int i = 0; i < 6; i++) {
+    if (wire[i * 2] != (uint8_t) ~wire[i * 2 + 1]) {
+      return false;
+    }
+  }
+
+  uint8_t r1 = wire[3];
+  uint8_t r3 = wire[7];
+  uint8_t r4 = wire[9];
+
+  bool power = (r3 & 0x02) != 0;
+  bool sleep_on = (r3 & 0x01) != 0;
+  bool swing_on = ((r3 >> 2) & 0x03) == 0x01;
+  uint8_t fan_bits = (r3 >> 5) & 0x03;
+  bool turbo_on = (r1 & 0x08) != 0;
+  bool light_on = (r1 & 0x01) != 0;
+
+  climate::ClimateMode mode = climate::CLIMATE_MODE_OFF;
+  if (power) {
+    switch ((r4 >> 5) & 0x07) {
+      case 0:
+        mode = climate::CLIMATE_MODE_HEAT_COOL;
+        break;
+      case 1:
+        mode = climate::CLIMATE_MODE_COOL;
+        break;
+      case 2:
+        mode = climate::CLIMATE_MODE_DRY;
+        break;
+      case 3:
+        mode = climate::CLIMATE_MODE_FAN_ONLY;
+        break;
+      case 4:
+        mode = climate::CLIMATE_MODE_HEAT;
+        break;
+      default:
+        mode = climate::CLIMATE_MODE_HEAT_COOL;
+        break;
+    }
+  }
+
+  climate::ClimateFanMode fan;
+  switch (fan_bits) {
+    case 0b01:
+      fan = climate::CLIMATE_FAN_HIGH;
+      break;
+    case 0b10:
+      fan = climate::CLIMATE_FAN_MEDIUM;
+      break;
+    case 0b11:
+      fan = climate::CLIMATE_FAN_LOW;
+      break;
+    default:
+      fan = climate::CLIMATE_FAN_AUTO;
+      break;
+  }
+
+  climate::ClimateSwingMode swing_mode =
+      swing_on ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
+
+  climate::ClimatePreset preset = climate::CLIMATE_PRESET_NONE;
+  const char *custom_preset = nullptr;
+  if (sleep_on) {
+    preset = climate::CLIMATE_PRESET_SLEEP;
+  } else if (turbo_on) {
+    preset = climate::CLIMATE_PRESET_BOOST;
+  } else if (light_on) {
+    custom_preset = "light";
+  }
+
+  this->mode = mode;
+  this->target_temperature = (r4 & 0x1F) + 16;
+  this->fan_mode = fan;
+  this->swing_mode = swing_mode;
+  this->preset = preset;
+  if (custom_preset != nullptr) {
+    this->set_supported_custom_presets({"light"});
+    this->set_custom_preset_(custom_preset);
+  } else {
+    this->clear_custom_preset_();
+  }
+
+  this->last_power_ = power;
+  if (power) {
+    this->last_mode_ = mode;
+    this->last_fan_ = fan;
+  }
+  this->last_temp_ = this->target_temperature;
+  this->last_swing_ = swing_on;
+  this->last_sleep_ = sleep_on;
+  this->last_turbo_ = turbo_on;
+  this->last_light_ = light_on;
+
+  this->publish_state();
+  return true;
+}
+
 }  // namespace rapid_ac
 }  // namespace esphome

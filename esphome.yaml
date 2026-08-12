@@ -40,3 +40,4 @@ climate:
   - platform: rapid_ac
     name: "Rapid AC"
     transmitter_id: remote_transmitter
+    receiver_id: remote_receiver

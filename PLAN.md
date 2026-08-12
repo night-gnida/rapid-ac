@@ -54,12 +54,12 @@ R4/R5 как у текущего режима/температуры. Решен
 Реализовано: power, mode, temp±, swing (cmd 0x04, маска `{OFF, VERTICAL}`, `last_swing_`),
 fan speed (cmd 0x05, маска `{AUTO,LOW,MEDIUM,HIGH}`, `last_fan_`, R3-битфилд),
 sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom preset
-`light`, bit0 R1).
+`light`, bit0 R1), **приём ИК от пульта → синхронизация HA** (`on_receive`, `receiver_id`).
 
 Недочёты:
 - Не реализован: timer (отложен — `R2=0x06`, часы в `R0=0xA0|h`, README).
 - README содержит неполные сэмплы кадров (устарели после битфилда).
-- Проект в git (инициализирован), remote = `night-gnida/rapid-ac` (private).
+- Проект в git (инициализирован), remote = `night-gnida/rapid-ac` (public).
 
 ## Открытые решения
 
@@ -116,6 +116,15 @@ sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom 
 
 - После fan-реализации подтвердить: `0x7A / 0x1A` ≈ fan Low/Auto, режим ни при чём.
 - Перепроверить метку «heat24»: по R4=`0x8F` это HEAT **31°C**.
+
+## Этап 7 — Приём ИК (синхронизация с пультом) ✅
+
+- [x] `on_receive` декодер в `rapid_ac.cpp` (хедер/биты/футер/парность).
+- [x] Парсинг power/mode/temp/fan/swing + presets sleep/turbo/light.
+- [x] Синхронизация `last_*` + `publish_state()`.
+- [x] `climate.py`: schema → `climate_ir_with_receiver_schema`.
+- [x] `esphome.yaml`: `receiver_id: remote_receiver`.
+- [ ] Живая проверка на сервере: пульт → HA обновляется.
 
 ## Этап 6 — документация
 

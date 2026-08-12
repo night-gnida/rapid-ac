@@ -111,3 +111,22 @@ power off: FF 00 FF 00 FF 00 87 78 B6 49 AA 55
   If they match the formula above, transmission timing is correct.
 - Send a COOL 24 °C via Home Assistant and confirm the AC responds.
 - The `ESP_LOGV` line in `rapid_ac.cpp` prints the emitted wire frame per command.
+
+## Receive (feedback from the original remote)
+
+The component decodes IR frames from the original remote (via `remote_receiver`, GPIO5)
+and publishes the resulting state to Home Assistant, so `climate.rapid_ac` stays in sync
+when you press buttons on the physical remote. Requires `receiver_id` in the climate config:
+
+```yaml
+climate:
+  - platform: rapid_ac
+    name: "Rapid AC"
+    transmitter_id: remote_transmitter
+    receiver_id: remote_receiver
+```
+
+Decoding is the reverse of `send_frame_`: header `6200/7480`, 96 data bits
+(mark `560`, space `>1000` µs = 1 else 0), footer `560/7480` + final mark `560`,
+pair-complement check `[~Ri, Ri]`. Every valid frame updates power/mode/temp/fan/swing
+and presets (sleep/turbo/light), then `publish_state()`.
