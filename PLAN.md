@@ -1,16 +1,14 @@
-# Rapid AC — план развития (архив чата, обновлён 2026-08-12)
+# Rapid AC — план развития (архив чата, обновлён 2026-08-13)
 
 ## Контекст
 
 YTF Remote IR (TYWE3S/ESP8266, плата `esp01_1m`) прошит кастомным ESPHome-компонентом
 `rapid_ac` — Wi-Fi ИК-пульт кондиционера Rapid (клон Goodweather).
 
-- Локально: `D:\MY Trash\programing\rapid_ac\`
-  - `components/rapid_ac/{__init__.py, climate.py, rapid_ac.h, rapid_ac.cpp}`
-  - `esphome.yaml`, `secrets.yaml(.example)`, `README.md`, `PLAN.md`
-- Сервер HA: `/config/esphome/ir-remote-bluster.yaml`,
-  `/config/esphome/components/rapid_ac/`
+- GitHub (public): `https://github.com/night-gnida/rapid-ac`
+- Сервер HA: `/config/esphome/ir-remote-bluster.yaml` (external_components → GitHub)
 - ESPHome 2026.7.4 (локально не установлен — компиляция только на сервере)
+- IR приёмник IRM-3638 — **active-low** (mark = отрицательный, space = положительный)
 
 ## Протокол (верифицировано по захватам)
 
@@ -51,15 +49,26 @@ R4/R5 как у текущего режима/температуры. Решен
 
 ## Текущее состояние кода
 
-Реализовано: power, mode, temp±, swing (cmd 0x04, маска `{OFF, VERTICAL}`, `last_swing_`),
-fan speed (cmd 0x05, маска `{AUTO,LOW,MEDIUM,HIGH}`, `last_fan_`, R3-битфилд),
-sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom preset
-`light`, bit0 R1), **приём ИК от пульта → синхронизация HA** (`on_receive`, `receiver_id`).
+Реализовано (все запушено на master):
+- power, mode, temp±, swing (cmd `0x04`, `last_swing_`)
+- fan speed (cmd `0x05`, `last_fan_`, R3-битфилд, дефолт Auto)
+- sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom `light`, bit0 R1)
+- **приём ИК от пульта → синхронизация HA** (`on_receive`, `receiver_id`)
+- **полярность-независимый декодер** (`abs()`-матчинг, фикс инверсии IRM-3638)
+
+Git-коммиты:
+- `af93392` — initial (swing)
+- `3f2e9a7` — fan speed (cmd `0x05`, R3-битфилд)
+- `6bd506a` — sleep/turbo/light (пресеты)
+- `2dc501f` — приём ИК (`on_receive`, `receiver_id`)
+- `ae38864` — диагностика `ESP_LOGD` в `on_receive`
+- `e385eea` — дамп первых raw-значений
+- `20fc0a0` — **fix: полярность-независимый декодер** (abs-матчинг)
 
 Недочёты:
-- Не реализован: timer (отложен — `R2=0x06`, часы в `R0=0xA0|h`, README).
-- README содержит неполные сэмплы кадров (устарели после битфилда).
-- Проект в git (инициализирован), remote = `night-gnida/rapid-ac` (public).
+- Timer отложен (`R2=0x06`, часы в `R0=0xA0|h`).
+- README содержит устаревшие сэмплы кадров.
+- **Ждёт проверки**: приём ИК на сервере после `20fc0a0` (полярность-фикс).
 
 ## Открытые решения
 
@@ -70,8 +79,10 @@ sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom 
 
 ## Этап 0 — первичные действия
 
-- [ ] Синк `rapid_ac.{h,cpp}` на сервер, пересборка, проверка swing вживую.
-- [ ] (рекомендую) `git init` + первый коммит «swing», для возможности отката.
+- [x] Git init + первый коммит, remote `night-gnida/rapid-ac` (public).
+- [x] Тег `v0.2` (sleep/turbo/light).
+- [x] Серверный конфиг переключён на `github://night-gnida/rapid-ac`.
+- [x] `receiver_id: ir_rx`, `transmitter_id: ir_tx` в конфиге.
 
 ## Этап 1 — съёмка режимов с пульта (пользователь)
 
@@ -117,14 +128,16 @@ sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom 
 - После fan-реализации подтвердить: `0x7A / 0x1A` ≈ fan Low/Auto, режим ни при чём.
 - Перепроверить метку «heat24»: по R4=`0x8F` это HEAT **31°C**.
 
-## Этап 7 — Приём ИК (синхронизация с пультом) ✅
+## Этап 7 — Приём ИК (синхронизация с пультом)
 
 - [x] `on_receive` декодер в `rapid_ac.cpp` (хедер/биты/футер/парность).
 - [x] Парсинг power/mode/temp/fan/swing + presets sleep/turbo/light.
 - [x] Синхронизация `last_*` + `publish_state()`.
 - [x] `climate.py`: schema → `climate_ir_with_receiver_schema`.
-- [x] `esphome.yaml`: `receiver_id: remote_receiver`.
-- [ ] Живая проверка на сервере: пульт → HA обновляется.
+- [x] Серверный конфиг: `id: ir_rx`/`ir_tx` + `receiver_id: ir_rx`.
+- [x] **Fix полярности** (`20fc0a0`): IRM-3638 active-low → marks отрицательные →
+  `expect_mark` всегда падал. Заменён на `abs()`-матчинг со ручным сдвигом индекса.
+- [ ] **Живая проверка**: Clean Build → Install → пульт → HA обновляется.
 
 ## Этап 6 — документация
 
