@@ -169,6 +169,8 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
 
 bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   ESP_LOGD(TAG, "on_receive: size=%d index=%d", (int) data.size(), (int) data.get_index());
+  ESP_LOGD(TAG, "raw[0..7]: %d %d %d %d %d %d %d %d", (int) data[0], (int) data[1], (int) data[2],
+           (int) data[3], (int) data[4], (int) data[5], (int) data[6], (int) data[7]);
   if (!data.expect_item(HDR_MARK, HDR_SPACE)) {
     ESP_LOGD(TAG, "reject: header mismatch (idx=%d)", (int) data.get_index());
     return false;
