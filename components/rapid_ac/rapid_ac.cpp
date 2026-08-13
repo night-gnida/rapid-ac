@@ -168,36 +168,59 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
 }
 
 bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
-  ESP_LOGD(TAG, "on_receive: size=%d index=%d", (int) data.size(), (int) data.get_index());
-  ESP_LOGD(TAG, "raw[0..7]: %d %d %d %d %d %d %d %d", (int) data[0], (int) data[1], (int) data[2],
-           (int) data[3], (int) data[4], (int) data[5], (int) data[6], (int) data[7]);
-  if (!data.expect_item(HDR_MARK, HDR_SPACE)) {
-    ESP_LOGD(TAG, "reject: header mismatch (idx=%d)", (int) data.get_index());
+  const auto matches = [](int32_t value, uint32_t target) {
+    uint32_t v = std::abs(value);
+    return v >= target * 75 / 100 && v <= target * 125 / 100;
+  };
+  const int32_t n = data.size();
+  uint32_t idx = 0;
+
+  if (idx + 1 >= (uint32_t) n) {
+    ESP_LOGD(TAG, "reject: too short (n=%d)", (int) n);
     return false;
   }
+  if (!matches(data[idx], HDR_MARK) || !matches(data[idx + 1], HDR_SPACE)) {
+    ESP_LOGD(TAG, "reject: header mismatch (idx=%u)", idx);
+    return false;
+  }
+  idx += 2;
 
   uint8_t wire[12];
   for (int i = 0; i < 12; i++) {
     uint8_t byte = 0;
     for (int bit = 0; bit < 8; bit++) {
-      if (data.expect_item(BIT_MARK, ZERO_SPACE)) {
-        // bit is 0
-      } else if (data.expect_item(BIT_MARK, ONE_SPACE)) {
-        byte |= (uint8_t) 1 << bit;
-      } else {
-        ESP_LOGD(TAG, "reject: bit read fail byte=%d bit=%d (idx=%d)", i, bit, (int) data.get_index());
+      if (idx + 1 >= (uint32_t) n) {
+        ESP_LOGD(TAG, "reject: too short at bit byte=%d bit=%d (idx=%u)", i, bit, idx);
         return false;
       }
+      if (!matches(data[idx], BIT_MARK)) {
+        ESP_LOGD(TAG, "reject: bit mark fail byte=%d bit=%d val=%d (idx=%u)", i, bit,
+                 (int) data[idx], idx);
+        return false;
+      }
+      if (matches(data[idx + 1], ONE_SPACE)) {
+        byte |= (uint8_t) 1 << bit;
+      } else if (!matches(data[idx + 1], ZERO_SPACE)) {
+        ESP_LOGD(TAG, "reject: bit space fail byte=%d bit=%d val=%d (idx=%u)", i, bit,
+                 (int) data[idx + 1], idx);
+        return false;
+      }
+      idx += 2;
     }
     wire[i] = byte;
   }
 
-  if (!data.expect_item(BIT_MARK, FOOTER_SPACE)) {
-    ESP_LOGD(TAG, "reject: footer space mismatch (idx=%d)", (int) data.get_index());
+  if (idx + 1 >= (uint32_t) n) {
+    ESP_LOGD(TAG, "reject: too short at footer (idx=%u)", idx);
     return false;
   }
-  if (!data.expect_mark(BIT_MARK)) {
-    ESP_LOGD(TAG, "reject: final mark mismatch (idx=%d)", (int) data.get_index());
+  if (!matches(data[idx], BIT_MARK) || !matches(data[idx + 1], FOOTER_SPACE)) {
+    ESP_LOGD(TAG, "reject: footer mismatch (idx=%u)", idx);
+    return false;
+  }
+  idx += 2;
+  if (idx >= (uint32_t) n || !matches(data[idx], BIT_MARK)) {
+    ESP_LOGD(TAG, "reject: final mark mismatch (idx=%u)", idx);
     return false;
   }
 
