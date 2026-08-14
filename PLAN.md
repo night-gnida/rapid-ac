@@ -176,9 +176,9 @@ Git-коммиты:
 
 Порядок после живого теста приёма ИК:
 
-1. **YAML-батч**: `dump: all` → `raw` (снять нагрузку/предупреждение
-   "remote_receiver took a long time"), добавить `captive_portal`,
-   `wifi_signal`, `uptime`.
+1. ~~**YAML-батч**~~ ✅ `d32b55d` (локальный `esphome.yaml`): `dump: all` → `raw`,
+   добавлены `captive_portal`, `wifi_signal`, `uptime`.
+   Осталось отразить в серверном `ir-remote-bluster.yaml`.
 2. ~~**hvac_action**~~ ✅ `f127b53`: mode→action (COOL→COOLING, HEAT→HEATING,
    DRY→DRYING, FAN→FAN, OFF→OFF, AUTO/HEAT_COOL→IDLE). Зеркалит выбранный
    режим, реальный компрессор IR не видит.
