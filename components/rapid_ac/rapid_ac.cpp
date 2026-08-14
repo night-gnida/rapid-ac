@@ -263,9 +263,13 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   uint8_t r3 = wire[7];
   uint8_t r4 = wire[9];
 
-  if (command == 0x0D) {
-    // Timer frame: hours in R0 (0xA0|h); payload fields are not climate state.
-    ESP_LOGD(TAG, "timer: cmd=0x0D R0=%02X -> %uh", r0, r0 & 0x0F);
+  if (r0 >= 0xA1 && r0 <= 0xB8) {
+    // Timer value (hours in R0 as 0xA0|h) riding a 0x02/0x03/0x0D frame;
+    // R3/R4 in these frames still carry the real climate state.
+    ESP_LOGD(TAG, "timer: cmd=0x%02X R0=%02X -> %uh", command, r0, r0 & 0x1F);
+  } else if (command == 0x0D) {
+    // Timer-mode frame; payload fields are not climate state.
+    ESP_LOGD(TAG, "timer-mode: cmd=0x0D R0=%02X R1=%02X", r0, r1);
     return true;
   }
 
