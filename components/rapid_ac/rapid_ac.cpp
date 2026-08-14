@@ -257,9 +257,17 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
     }
   }
 
+  uint8_t r0 = wire[1];
   uint8_t r1 = wire[3];
+  uint8_t command = wire[5];
   uint8_t r3 = wire[7];
   uint8_t r4 = wire[9];
+
+  if (command == 0x0D) {
+    // Timer frame: hours in R0 (0xA0|h); payload fields are not climate state.
+    ESP_LOGD(TAG, "timer: cmd=0x0D R0=%02X -> %uh", r0, r0 & 0x0F);
+    return true;
+  }
 
   bool power = (r3 & 0x02) != 0;
   bool sleep_on = (r3 & 0x01) != 0;
@@ -344,9 +352,12 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   this->last_turbo_ = turbo_on;
   this->last_light_ = light_on;
 
-  ESP_LOGD(TAG, "accepted: R1=%02X R3=%02X R4=%02X power=%d mode=%d temp=%.0f fan=%d swing=%d",
-           r1, r3, r4, power ? 1 : 0, (int) mode, this->target_temperature, (int) fan_bits,
-           swing_on ? 1 : 0);
+  ESP_LOGD(TAG,
+           "accepted: cmd=0x%02X R0=%02X R1=%02X R3=%02X R4=%02X power=%d mode=%d temp=%.0f "
+           "fan=%d swing=%d sleep=%d turbo=%d light=%d",
+           command, r0, r1, r3, r4, power ? 1 : 0, (int) mode, this->target_temperature,
+           (int) fan_bits, swing_on ? 1 : 0, sleep_on ? 1 : 0, turbo_on ? 1 : 0,
+           light_on ? 1 : 0);
   this->update_action_();
   this->publish_state();
   return true;
