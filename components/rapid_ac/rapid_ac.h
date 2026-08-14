@@ -25,6 +25,7 @@ class RapidAcClimate : public climate_ir::ClimateIR {
   void send_frame_(uint8_t command, bool power, climate::ClimateMode mode, float temp,
                    climate::ClimateFanMode fan, bool swing_on, bool sleep_on, bool turbo_on,
                    bool light_on);
+  void update_action_();
 
   bool last_power_{true};
   climate::ClimateMode last_mode_{climate::CLIMATE_MODE_COOL};

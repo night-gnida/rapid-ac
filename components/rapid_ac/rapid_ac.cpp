@@ -28,6 +28,31 @@ void RapidAcClimate::setup() {
   this->last_sleep_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_SLEEP);
   this->last_turbo_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST);
   this->last_light_ = (this->get_custom_preset() == "light");
+  this->update_action_();
+  this->publish_state();
+}
+
+void RapidAcClimate::update_action_() {
+  switch (this->mode) {
+    case climate::CLIMATE_MODE_COOL:
+      this->action = climate::CLIMATE_ACTION_COOLING;
+      break;
+    case climate::CLIMATE_MODE_HEAT:
+      this->action = climate::CLIMATE_ACTION_HEATING;
+      break;
+    case climate::CLIMATE_MODE_DRY:
+      this->action = climate::CLIMATE_ACTION_DRYING;
+      break;
+    case climate::CLIMATE_MODE_FAN_ONLY:
+      this->action = climate::CLIMATE_ACTION_FAN;
+      break;
+    case climate::CLIMATE_MODE_OFF:
+      this->action = climate::CLIMATE_ACTION_OFF;
+      break;
+    default:
+      this->action = climate::CLIMATE_ACTION_IDLE;
+      break;
+  }
 }
 
 void RapidAcClimate::transmit_state() {
@@ -64,6 +89,7 @@ void RapidAcClimate::transmit_state() {
   climate::ClimateMode frame_mode = power ? this->mode : this->last_mode_;
   this->send_frame_(command, power, frame_mode, this->target_temperature, fan, swing_on,
                     sleep_on, turbo_on, light_on);
+  this->update_action_();
 
   this->last_power_ = power;
   if (power) {
@@ -97,7 +123,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   }
 
   uint8_t r1 = 0;
-  r1 |= (light_on ? (uint8_t) 0x01 : 0x00);  // Light: bit0
+  r1 |= (light_on ? (uint8_t) 0x10 : 0x00);  // Light: bit4
   r1 |= (turbo_on ? (uint8_t) 0x08 : 0x00);  // Turbo: bit3
 
   uint8_t r3 = 0;
@@ -240,7 +266,7 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   bool swing_on = ((r3 >> 2) & 0x03) == 0x01;
   uint8_t fan_bits = (r3 >> 5) & 0x03;
   bool turbo_on = (r1 & 0x08) != 0;
-  bool light_on = (r1 & 0x01) != 0;
+  bool light_on = (r1 & 0x10) != 0;
 
   climate::ClimateMode mode = climate::CLIMATE_MODE_OFF;
   if (power) {
@@ -321,6 +347,7 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   ESP_LOGD(TAG, "accepted: R1=%02X R3=%02X R4=%02X power=%d mode=%d temp=%.0f fan=%d swing=%d",
            r1, r3, r4, power ? 1 : 0, (int) mode, this->target_temperature, (int) fan_bits,
            swing_on ? 1 : 0);
+  this->update_action_();
   this->publish_state();
   return true;
 }
