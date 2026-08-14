@@ -38,9 +38,9 @@ USB-UART         TYWE3S
 ```
 components/rapid_ac/
   __init__.py   namespace + class binding (extends climate_ir.ClimateIR)
-  climate.py    config schema registration
+  climate.py    config schema registration (climate_ir_with_receiver_schema)
   rapid_ac.h    header
-  rapid_ac.cpp  frame builder + IR transmit
+  rapid_ac.cpp  frame builder + IR transmit + IR receive decoder
 esphome.yaml
 secrets.yaml
 ```
@@ -55,55 +55,97 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 
 | Real | Byte | Meaning |
 |------|------|---------|
-| R0 | 0x00 | fixed (timer hours `0xA0\|h` — see Timer, not exposed yet) |
+| R0 | 0x00 | fixed (timer hours `0xA0\|h` — see Timer) |
 | R1 | bitfield | Light=bit0, Turbo=bit3 |
-| R2 | 0x00..0x0B | command (00=power, 01=mode, 02=temp+, 03=temp−, 04=swing, 05=fan, 06=timer, 09=sleep, 0A=turbo, 0B=light) |
-| R3 | bitfield | see below |
-| R4 | `((mode_code<<1)<<4) \| (temp−16)` | mode_code: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4 |
+| R2 | 0x00..0x0B | command (see table below) |
+| R3 | bitfield | Sleep, Power, Swing, AirFlow, Fan |
+| R4 | `(mode_code << 5) \| (temp - 16)` | mode_code: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4 |
 | R5 | 0x55 | fixed → wire `AA 55` |
 
-R1 bitfield (LSB):
+### Commands (R2)
+
+| R2 | Command |
+|----|---------|
+| 0x00 | Power |
+| 0x01 | Mode |
+| 0x02 | Temp+ |
+| 0x03 | Temp- |
+| 0x04 | Swing (toggle) |
+| 0x05 | Fan speed |
+| 0x06 | Timer (not implemented) |
+| 0x09 | Sleep |
+| 0x0A | Turbo |
+| 0x0B | Light |
+
+### R1 bitfield (LSB)
 
 | Bit | Field | Values |
 |-----|-------|--------|
-| 0 | Light (дисплей) | 1=display off |
+| 0 | Light (display) | 1=display off |
 | 3 | Turbo | 1=on |
 
-R3 bitfield (LSB): `Sleep | Power | Swing(2) | AirFlow | Fan(2)` — bits:
+`R1 = (light ? 0x01 : 0) | (turbo ? 0x08 : 0)`
+
+### R3 bitfield (LSB)
 
 | Bit(s) | Field | Values |
 |--------|-------|--------|
 | 0 | Sleep | 1=on |
 | 1 | Power | 1=on, 0=off |
-| 2-3 | Swing | 0b10=off, 0b01=on |
-| 4 | AirFlow | 1 (fixed in captures) |
+| 2-3 | Swing | 0b01=on, 0b10=off |
+| 4 | AirFlow | 1 (fixed) |
 | 5-6 | Fan | 0b00=Auto, 0b01=High, 0b10=Med, 0b11=Low |
 | 7 | reserved | 0 |
 
-So `R1 = (light?0x01:0) | (turbo?0x08:0)` and
-`R3 = (sleep?0x01:0) | (power?0x02:0) | (swing_on?0x04:0x08) | 0x10 | (fan_bits<<5)`.
+`R3 = (sleep ? 0x01 : 0) | (power ? 0x02 : 0) | (swing_on ? 0x04 : 0x08) | 0x10 | (fan_bits << 5)`
 
 ### Home Assistant mapping
 
 | Rapid feature | HA control | Frame |
 |---------------|------------|-------|
-| Power / Mode / Temp | climate standard | 0x00/0x01/0x02/0x03 |
-| Swing (шторка) | swing mode `VERTICAL` | 0x04, bits 2-3 |
-| Fan speed | fan mode `AUTO/LOW/MEDIUM/HIGH` | 0x05, bits 5-6 |
+| Power / Mode / Temp | climate standard | 0x00 / 0x01 / 0x02 / 0x03 |
+| Swing (louver) | swing mode `VERTICAL` | 0x04, R3 bits 2-3 |
+| Fan speed | fan mode `AUTO / LOW / MEDIUM / HIGH` | 0x05, R3 bits 5-6 |
 | Sleep | preset `Sleep` | 0x09, R3 bit0 |
 | Turbo | preset `Boost` | 0x0A, R1 bit3 |
-| Light (дисплей) | custom preset `light` | 0x0B, R1 bit0 |
+| Light (display) | custom preset `light` | 0x0B, R1 bit0 |
 
-Sample frames (wire):
+### Sample frames (wire)
+
+Power on commands, COOL 24°C base, fan Auto, swing off:
 
 ```
-cool 24°C : FF 00 FF 00 FD 02 C5 3A D7 28 AA 55
-heat 24°C : FF 00 FF 00 FD 02 85 7A 77 88 AA 55
-fan  24°C : FF 00 FF 00 FC 03 85 7A 97 68 AA 55
-auto 25°C : FF 00 FF 00 FE 01 85 7A F6 09 AA 55
-dry  25°C : FF 00 FF 00 FE 01 85 7A B6 49 AA 55
-power off: FF 00 FF 00 FF 00 87 78 B6 49 AA 55
+cool 24°C power on : FF 00 FF 00 FF 00 E5 1A D7 28 AA 55
+heat 24°C power on : FF 00 FF 00 FF 00 E5 1A 77 88 AA 55
+fan  24°C power on : FF 00 FF 00 FF 00 E5 1A 97 68 AA 55
+auto 25°C power on : FF 00 FF 00 FF 00 E5 1A F6 09 AA 55
+dry  25°C power on : FF 00 FF 00 FF 00 E5 1A B6 49 AA 55
+power off          : FF 00 FF 00 FF 00 E7 18 D7 28 AA 55
 ```
+
+Fan speed change (cmd 0x05), COOL 24°C, power on:
+
+```
+fan High           : FF 00 FA 05 C5 3A D7 28 AA 55
+fan Auto           : FF 00 FA 05 E5 1A D7 28 AA 55
+fan Medium         : FF 00 FA 05 CD 2A D7 28 AA 55
+fan Low            : FF 00 FA 05 85 7A D7 28 AA 55
+```
+
+Temp+ from original remote (cmd 0x02), COOL 24°C, fan Low:
+
+```
+temp+ (capture)    : FF 00 FD 02 85 7A D7 28 AA 55
+```
+
+### Differences from Goodweather (IRremoteESP8266)
+
+| Feature | Rapid | Goodweather |
+|---------|-------|-------------|
+| Pad (R5) | 0x55 (wire `AA 55`) | 0xD5 (wire `2A D5`) |
+| Space polarity | long space = 1 | long space = 0 |
+| Swing | on / off only | fast / slow / off |
+| AirFlow button | absent on remote | present |
 
 ## Verification
 
@@ -112,11 +154,13 @@ power off: FF 00 FF 00 FF 00 87 78 B6 49 AA 55
 - Send a COOL 24 °C via Home Assistant and confirm the AC responds.
 - The `ESP_LOGV` line in `rapid_ac.cpp` prints the emitted wire frame per command.
 
-## Receive (feedback from the original remote)
+## Receive (IR feedback from the original remote)
 
 The component decodes IR frames from the original remote (via `remote_receiver`, GPIO5)
 and publishes the resulting state to Home Assistant, so `climate.rapid_ac` stays in sync
-when you press buttons on the physical remote. Requires `receiver_id` in the climate config:
+when you press buttons on the physical remote.
+
+Requires `receiver_id` in the climate config:
 
 ```yaml
 climate:
@@ -126,7 +170,28 @@ climate:
     receiver_id: remote_receiver
 ```
 
-Decoding is the reverse of `send_frame_`: header `6200/7480`, 96 data bits
-(mark `560`, space `>1000` µs = 1 else 0), footer `560/7480` + final mark `560`,
-pair-complement check `[~Ri, Ri]`. Every valid frame updates power/mode/temp/fan/swing
-and presets (sleep/turbo/light), then `publish_state()`.
+Decoding is polarity-agnostic (`abs()`-matching with ±25% tolerance) because the IRM-3638
+receiver is active-low: marks come as negative values, spaces as positive. The decoder matches
+absolute values against expected timings regardless of sign.
+
+Flow: header `6200/7480` → 96 data bits (mark `560`, space `>1000 µs` = 1 else 0) →
+footer `560/7480` + final mark `560` → pair-complement check `[~Ri, Ri]`. Every valid
+frame updates power/mode/temp/fan/swing and presets (sleep/turbo/light), then `publish_state()`.
+
+### Testing IR receive
+
+1. Clean Build → Install on server.
+2. Press any button on the original remote.
+3. In ESPHome logs look for:
+   - `accepted: R1=.. R3=.. R4=.. power=.. mode=.. temp=.. fan=.. swing=..` — frame decoded
+   - `reject: ...` — frame did not match protocol (check timings)
+4. Verify `climate.rapid_ac` state updates in Home Assistant.
+
+## Timer (R2=0x06, not implemented)
+
+Timer command sets hours in R0: `R0 = 0xA0 | hours` (1h=`A1`, 2h=`A2`, ...).
+Planned as `number`/`switch` entity in Home Assistant. Not yet implemented.
+
+## GitHub
+
+Public repository: `https://github.com/night-gnida/rapid-ac`
