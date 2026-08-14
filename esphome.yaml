@@ -47,6 +47,23 @@ remote_receiver:
 
 climate:
   - platform: rapid_ac
+    id: ac_unit
     name: "Rapid AC"
     transmitter_id: remote_transmitter
     receiver_id: remote_receiver
+
+number:
+  - platform: template
+    name: "AC Timer"
+    id: ac_timer
+    min_value: 0
+    max_value: 24
+    step: 1
+    initial_value: 0
+    optimistic: false
+    update_interval: 5s
+    lambda: |-
+      return id(ac_unit).get_timer_hours();
+    set_action:
+      - lambda: |-
+          id(ac_unit).set_timer_hours((int) x);

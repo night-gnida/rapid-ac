@@ -105,7 +105,7 @@ void RapidAcClimate::transmit_state() {
 
 void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMode mode,
                                  float temp, climate::ClimateFanMode fan, bool swing_on,
-                                 bool sleep_on, bool turbo_on, bool light_on) {
+                                 bool sleep_on, bool turbo_on, bool light_on, uint8_t r0) {
   uint8_t fan_bits;
   switch (fan) {
     case climate::CLIMATE_FAN_HIGH:
@@ -158,7 +158,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   uint8_t temp_val = (uint8_t) roundf(temp) - 16;
   uint8_t r4 = (uint8_t)((mode_code << 1) << 4) | temp_val;
 
-  const uint8_t real[6] = {0x00, r1, command, r3, r4, 0x55};
+  const uint8_t real[6] = {r0, r1, command, r3, r4, 0x55};
   uint8_t wire[12];
   for (int i = 0; i < 6; i++) {
     wire[i * 2] = (uint8_t)~real[i];
@@ -191,6 +191,24 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
                 "%02X %02X %02X %02X %02X %02X",
            command, power ? 1 : 0, (int) mode, temp, wire[0], wire[1], wire[2], wire[3], wire[4],
            wire[5], wire[6], wire[7], wire[8], wire[9], wire[10], wire[11]);
+}
+
+void RapidAcClimate::set_timer_hours(int hours) {
+  if (hours < 0)
+    hours = 0;
+  if (hours > 24)
+    hours = 24;
+  uint8_t r0 = hours == 0 ? 0x00 : (uint8_t) (0xA0 | hours);
+  bool power = (this->mode != climate::CLIMATE_MODE_OFF);
+  climate::ClimateMode frame_mode = power ? this->mode : this->last_mode_;
+  this->send_frame_(0x03, power, frame_mode, this->target_temperature,
+                    this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO),
+                    this->swing_mode == climate::CLIMATE_SWING_VERTICAL,
+                    this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_SLEEP,
+                    this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST,
+                    this->get_custom_preset() == "light", r0);
+  this->last_timer_hours_ = hours;
+  ESP_LOGD(TAG, "set timer: %dh (R0=%02X)", hours, r0);
 }
 
 bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
@@ -263,9 +281,9 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   uint8_t r3 = wire[7];
   uint8_t r4 = wire[9];
 
+  this->last_timer_hours_ = (r0 >= 0xA1 && r0 <= 0xB8) ? (uint8_t) (r0 & 0x1F) : 0;
+
   if (r0 >= 0xA1 && r0 <= 0xB8) {
-    // Timer value (hours in R0 as 0xA0|h) riding a 0x02/0x03/0x0D frame;
-    // R3/R4 in these frames still carry the real climate state.
     ESP_LOGD(TAG, "timer: cmd=0x%02X R0=%02X -> %uh", command, r0, r0 & 0x1F);
   } else if (command == 0x0D) {
     // Timer-mode frame; payload fields are not climate state.
