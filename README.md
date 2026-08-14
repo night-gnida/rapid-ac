@@ -56,7 +56,7 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 | Real | Byte | Meaning |
 |------|------|---------|
 | R0 | 0x00 | fixed (timer hours `0xA0\|h` — see Timer) |
-| R1 | bitfield | Turbo=bit3, Light=bit4 |
+| R1 | bitfield | Light=bit0, Turbo=bit3, timer flag=bit4 |
 | R2 | 0x00..0x0B | command (see table below) |
 | R3 | bitfield | Sleep, Power, Swing, AirFlow, Fan |
 | R4 | `(mode_code << 5) \| (temp - 16)` | mode_code: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4 |
@@ -72,19 +72,21 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 | 0x03 | Temp- |
 | 0x04 | Swing (toggle) |
 | 0x05 | Fan speed |
-| 0x06 | Timer (not implemented) |
+| 0x06 | unknown (assumed Timer from Goodweather; live capture says Timer = 0x0D) |
 | 0x09 | Sleep |
 | 0x0A | Turbo |
 | 0x0B | Light |
+| 0x0D | Timer |
 
 ### R1 bitfield (LSB)
 
 | Bit | Field | Values |
 |-----|-------|--------|
+| 0 | Light (display) | 1=display off |
 | 3 | Turbo | 1=on |
-| 4 | Light (display) | 1=display off |
+| 4 | timer flag | 1 in timer frames (cmd 0x0D) |
 
-`R1 = (turbo ? 0x08 : 0) | (light ? 0x10 : 0)`
+`R1 = (light ? 0x01 : 0) | (turbo ? 0x08 : 0)`
 
 ### R3 bitfield (LSB)
 
@@ -108,7 +110,7 @@ Wire frame = 12 bytes = 6 real bytes in pairs `[~Ri, Ri]` (LSB-first per byte):
 | Fan speed | fan mode `AUTO / LOW / MEDIUM / HIGH` | 0x05, R3 bits 5-6 |
 | Sleep | preset `Sleep` | 0x09, R3 bit0 |
 | Turbo | preset `Boost` | 0x0A, R1 bit3 |
-| Light (display) | custom preset `light` | 0x0B, R1 bit4 |
+| Light (display) | custom preset `light` | 0x0B, R1 bit0 |
 
 `hvac_action` mirrors the selected mode (COOL→cooling, HEAT→heating, DRY→drying,
 FAN→fan, OFF→off, AUTO→idle). The real compressor state is not observable over IR —
@@ -191,10 +193,11 @@ frame updates power/mode/temp/fan/swing and presets (sleep/turbo/light), then `p
    - `reject: ...` — frame did not match protocol (check timings)
 4. Verify `climate.rapid_ac` state updates in Home Assistant.
 
-## Timer (R2=0x06, not implemented)
+## Timer (R2=0x0D, not implemented)
 
-Timer command sets hours in R0: `R0 = 0xA0 | hours` (1h=`A1`, 2h=`A2`, ...).
-Planned as `number`/`switch` entity in Home Assistant. Not yet implemented.
+Confirmed by live capture: timer+ 4h frame = cmd `0x0D`, `R0=0xA4` (`0xA0 | hours`,
+so 1h=`A1`, 2h=`A2`...), R1 bit4 set (timer flag). Planned as `number`/`switch`
+entity in Home Assistant. Not yet implemented.
 
 ## GitHub
 

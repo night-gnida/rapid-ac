@@ -123,7 +123,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   }
 
   uint8_t r1 = 0;
-  r1 |= (light_on ? (uint8_t) 0x10 : 0x00);  // Light: bit4
+  r1 |= (light_on ? (uint8_t) 0x01 : 0x00);  // Light: bit0
   r1 |= (turbo_on ? (uint8_t) 0x08 : 0x00);  // Turbo: bit3
 
   uint8_t r3 = 0;
@@ -266,7 +266,7 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   bool swing_on = ((r3 >> 2) & 0x03) == 0x01;
   uint8_t fan_bits = (r3 >> 5) & 0x03;
   bool turbo_on = (r1 & 0x08) != 0;
-  bool light_on = (r1 & 0x10) != 0;
+  bool light_on = (r1 & 0x01) != 0;
 
   climate::ClimateMode mode = climate::CLIMATE_MODE_OFF;
   if (power) {
