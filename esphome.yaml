@@ -24,6 +24,15 @@ logger:
 web_server:
   port: 80
 
+captive_portal: {}
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+  - platform: uptime
+    name: "Uptime"
+
 remote_transmitter:
   pin:
     number: GPIO14
@@ -34,7 +43,7 @@ remote_receiver:
   pin:
     number: GPIO5
     inverted: false
-  dump: all
+  dump: raw
 
 climate:
   - platform: rapid_ac
