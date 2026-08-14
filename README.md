@@ -189,7 +189,8 @@ frame updates power/mode/temp/fan/swing and presets (sleep/turbo/light), then `p
 1. Clean Build → Install on server.
 2. Press any button on the original remote.
 3. In ESPHome logs look for:
-   - `accepted: R1=.. R3=.. R4=.. power=.. mode=.. temp=.. fan=.. swing=..` — frame decoded
+   - `accepted: cmd=0x.. R0=.. R1=.. R3=.. R4=.. power=.. mode=.. temp=.. fan=.. swing=.. sleep=.. turbo=.. light=..` — full decoded frame
+   - `timer: cmd=0x0D R0=.. -> Nh` — timer frame (consumed, does not touch climate state)
    - `reject: ...` — frame did not match protocol (check timings)
 4. Verify `climate.rapid_ac` state updates in Home Assistant.
 
