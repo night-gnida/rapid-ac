@@ -1,5 +1,6 @@
 #include "rapid_ac.h"
 #include "esphome/components/remote_base/remote_base.h"
+#include "esphome/core/application.h"
 #include "esphome/core/log.h"
 
 #include <cmath>
@@ -18,6 +19,11 @@ static const uint32_t ZERO_SPACE = 550;
 static const uint32_t FOOTER_SPACE = 7480;
 static const uint32_t GAP = 10125;
 
+void TimerNumber::control(float value) {
+  this->climate_->set_timer_hours((int) value);
+  this->publish_state(value);
+}
+
 void RapidAcClimate::setup() {
   climate_ir::ClimateIR::setup();
   this->last_power_ = (this->mode != climate::CLIMATE_MODE_OFF);
@@ -29,6 +35,59 @@ void RapidAcClimate::setup() {
   this->last_turbo_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST);
   this->last_light_ = (this->get_custom_preset() == "light");
   this->update_action_();
+
+  this->timer_number_ = new TimerNumber(this);
+  this->timer_number_->set_name("AC Timer");
+  timer_number_->traits.set_min_value(0);
+  timer_number_->traits.set_max_value(24);
+  timer_number_->traits.set_step(1);
+  App.register_number(this->timer_number_);
+
+  this->probe_cmd_ = new ProbeNumber();
+  this->probe_cmd_->set_name("Probe Cmd");
+  probe_cmd_->traits.set_min_value(0);
+  probe_cmd_->traits.set_max_value(31);
+  probe_cmd_->traits.set_step(1);
+  App.register_number(this->probe_cmd_);
+
+  this->probe_r0_ = new ProbeNumber();
+  this->probe_r0_->set_name("Probe R0");
+  probe_r0_->traits.set_min_value(0);
+  probe_r0_->traits.set_max_value(255);
+  probe_r0_->traits.set_step(1);
+  App.register_number(this->probe_r0_);
+
+  this->probe_r1_ = new ProbeNumber();
+  this->probe_r1_->set_name("Probe R1 extra");
+  probe_r1_->traits.set_min_value(0);
+  probe_r1_->traits.set_max_value(255);
+  probe_r1_->traits.set_step(1);
+  App.register_number(this->probe_r1_);
+
+  this->probe_send_ = new button::Button();
+  this->probe_send_->set_name("Probe Send");
+  this->probe_send_->on_press.add_callback([this]() {
+    this->send_probe((uint8_t) this->probe_cmd_->state,
+                      (uint8_t) this->probe_r0_->state,
+                      (uint8_t) this->probe_r1_->state,
+                      0x00, 0x00);
+  });
+  App.register_button(this->probe_send_);
+
+  this->probe_airflow_clear_ = new button::Button();
+  this->probe_airflow_clear_->set_name("Probe AirFlow (07, bit4 clear)");
+  this->probe_airflow_clear_->on_press.add_callback([this]() {
+    this->send_probe(0x07, 0x00, 0x00, 0x10, 0x00);
+  });
+  App.register_button(this->probe_airflow_clear_);
+
+  this->probe_airflow_set_ = new button::Button();
+  this->probe_airflow_set_->set_name("Probe AirFlow (07, bit4 set)");
+  this->probe_airflow_set_->on_press.add_callback([this]() {
+    this->send_probe(0x07, 0x00, 0x00, 0x00, 0x00);
+  });
+  App.register_button(this->probe_airflow_set_);
+
   this->publish_state();
 }
 
@@ -211,7 +270,14 @@ void RapidAcClimate::set_timer_hours(int hours) {
                     this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST,
                     this->get_custom_preset() == "light", r0);
   this->last_timer_hours_ = hours;
+  this->publish_timer_();
   ESP_LOGD(TAG, "set timer: %dh (R0=%02X)", hours, r0);
+}
+
+void RapidAcClimate::publish_timer_() {
+  if (this->timer_number_ != nullptr) {
+    this->timer_number_->publish_state((float) this->last_timer_hours_);
+  }
 }
 
 void RapidAcClimate::send_probe(uint8_t command, uint8_t r0, uint8_t r1_extra,
@@ -299,6 +365,7 @@ bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {
   uint8_t r4 = wire[9];
 
   this->last_timer_hours_ = (r0 >= 0xA1 && r0 <= 0xB8) ? (uint8_t) (r0 & 0x1F) : 0;
+  this->publish_timer_();
 
   if (r0 >= 0xA1 && r0 <= 0xB8) {
     ESP_LOGD(TAG, "timer: cmd=0x%02X R0=%02X -> %uh", command, r0, r0 & 0x1F);

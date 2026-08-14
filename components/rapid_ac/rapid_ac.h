@@ -1,10 +1,28 @@
 #pragma once
 
 #include "esphome/components/climate_ir/climate_ir.h"
+#include "esphome/components/number/number.h"
+#include "esphome/components/button/button.h"
 #include "esphome/core/component.h"
 
 namespace esphome {
 namespace rapid_ac {
+
+class RapidAcClimate;
+
+class TimerNumber : public number::Number {
+ public:
+  explicit TimerNumber(RapidAcClimate *climate) : climate_(climate) {}
+  void control(float value) override;
+
+ protected:
+  RapidAcClimate *climate_;
+};
+
+class ProbeNumber : public number::Number {
+ public:
+  void control(float value) override { this->publish_state(value); }
+};
 
 class RapidAcClimate : public climate_ir::ClimateIR {
  public:
@@ -21,21 +39,18 @@ class RapidAcClimate : public climate_ir::ClimateIR {
   void transmit_state() override;
   bool on_receive(remote_base::RemoteReceiveData data) override;
 
- private:
-  void send_frame_(uint8_t command, bool power, climate::ClimateMode mode, float temp,
-                   climate::ClimateFanMode fan, bool swing_on, bool sleep_on, bool turbo_on,
-                   bool light_on, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
-                   uint8_t r3_clear = 0x00, uint8_t r3_set = 0x00);
-  void update_action_();
-
- public:
   int get_timer_hours() const { return this->last_timer_hours_; }
   void set_timer_hours(int hours);
   void send_probe(uint8_t command, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
                   uint8_t r3_clear = 0x00, uint8_t r3_set = 0x00);
 
  private:
-  uint8_t last_timer_hours_{0};
+  void send_frame_(uint8_t command, bool power, climate::ClimateMode mode, float temp,
+                   climate::ClimateFanMode fan, bool swing_on, bool sleep_on, bool turbo_on,
+                   bool light_on, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
+                   uint8_t r3_clear = 0x00, uint8_t r3_set = 0x00);
+  void update_action_();
+  void publish_timer_();
 
   bool last_power_{true};
   climate::ClimateMode last_mode_{climate::CLIMATE_MODE_COOL};
@@ -45,6 +60,15 @@ class RapidAcClimate : public climate_ir::ClimateIR {
   bool last_sleep_{false};
   bool last_turbo_{false};
   bool last_light_{false};
+
+  uint8_t last_timer_hours_{0};
+  TimerNumber *timer_number_{nullptr};
+  ProbeNumber *probe_cmd_{nullptr};
+  ProbeNumber *probe_r0_{nullptr};
+  ProbeNumber *probe_r1_{nullptr};
+  button::Button *probe_send_{nullptr};
+  button::Button *probe_airflow_clear_{nullptr};
+  button::Button *probe_airflow_set_{nullptr};
 };
 
 }  // namespace rapid_ac
