@@ -58,7 +58,6 @@ number:
     min_value: 0
     max_value: 24
     step: 1
-    optimistic: false
     update_interval: 5s
     lambda: |-
       return static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->get_timer_hours();
