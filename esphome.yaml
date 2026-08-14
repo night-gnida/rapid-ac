@@ -51,3 +51,62 @@ climate:
     name: "Rapid AC"
     transmitter_id: remote_transmitter
     receiver_id: remote_receiver
+
+number:
+  - platform: template
+    name: "AC Timer"
+    min_value: 0
+    max_value: 24
+    step: 1
+    optimistic: false
+    update_interval: 5s
+    lambda: |-
+      return static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->get_timer_hours();
+    set_action:
+      - lambda: |-
+          static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->set_timer_hours((int) x);
+  - platform: template
+    name: "Probe Cmd"
+    id: probe_cmd
+    min_value: 0
+    max_value: 31
+    step: 1
+    optimistic: true
+    initial_value: 6
+  - platform: template
+    name: "Probe R0"
+    id: probe_r0
+    min_value: 0
+    max_value: 255
+    step: 1
+    optimistic: true
+  - platform: template
+    name: "Probe R1 extra"
+    id: probe_r1
+    min_value: 0
+    max_value: 255
+    step: 1
+    optimistic: true
+
+button:
+  - platform: template
+    name: "Probe Send"
+    on_press:
+      - lambda: |-
+          static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->send_probe(
+              (uint8_t) id(probe_cmd).state,
+              (uint8_t) id(probe_r0).state,
+              (uint8_t) id(probe_r1).state,
+              0x00, 0x00);
+  - platform: template
+    name: "Probe AirFlow (07, bit4 clear)"
+    on_press:
+      - lambda: |-
+          static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->send_probe(
+              0x07, 0x00, 0x00, 0x10, 0x00);
+  - platform: template
+    name: "Probe AirFlow (07, bit4 set)"
+    on_press:
+      - lambda: |-
+          static_cast<esphome::rapid_ac::RapidAcClimate*>(id(ac_unit))->send_probe(
+              0x07, 0x00, 0x00, 0x00, 0x00);

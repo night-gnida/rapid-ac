@@ -3,7 +3,7 @@ from esphome.components import climate_ir
 
 from . import RapidAcClimate
 
-AUTO_LOAD = ["climate_ir", "number", "button"]
+AUTO_LOAD = ["climate_ir"]
 
 CONFIG_SCHEMA = climate_ir.climate_ir_with_receiver_schema(RapidAcClimate)
 
