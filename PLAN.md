@@ -15,7 +15,7 @@ YTF Remote IR (TYWE3S/ESP8266, плата `esp01_1m`) прошит кастом�
 - Кадр: 6 реальных байт → 12 wire `[~Ri, Ri]`, LSB-first, 38 кГц.
 - Тайминги (мкс): HDR `6200/7480`, бит `560`, 1 → space `1640`, 0 → space `550`,
   футер `560/7480` + финальный mark `560`, зазор ~`10125`.
-- Поля: `R0=00`, `R1=(Light<<0 | Turbo<<3)`, `R2=Command`, `R3=битфилд`,
+- Поля: `R0=00`, `R1=(Turbo<<3 | Light<<4)`, `R2=Command`, `R3=битфилд`,
   `R4=(mode_code<<5)|(temp−16)`, `R5=55` (pad). mode: AUTO=0 COOL=1 DRY=2 FAN=3 HEAT=4.
 
 | R2 | Команда |
@@ -31,6 +31,11 @@ YTF Remote IR (TYWE3S/ESP8266, плата `esp01_1m`) прошит кастом�
 | 0x09 | Sleep |
 | 0x0A | Turbo |
 | 0x0B | Light |
+
+R1 битфилд: `(Turbo<<3) | (Light<<4)`.
+> **Уточнено живым тестом 2026-08-14:** Light = **бит 4** (`R1=0x10` в логе),
+> изначально ошибочно реализован как бит 0. Исправлено в `f127b53`.
+> Turbo = бит 3 подтверждён (`R1=0x08` в логе).
 
 R3 (bitfield): `bit0 Sleep`, `bit1 Power`, `bits2-3 Swing (10=off, 01=on)`,
 `bit4 AirFlow`, `bits5-6 Fan (00=Auto, 01=High, 10=Med, 11=Low)`.
@@ -52,9 +57,10 @@ R4/R5 как у текущего режима/температуры. Решен
 Реализовано (все запушено на master):
 - power, mode, temp±, swing (cmd `0x04`, `last_swing_`)
 - fan speed (cmd `0x05`, `last_fan_`, R3-битфилд, дефолт Auto)
-- sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom `light`, bit0 R1)
+- sleep (preset `Sleep`, bit0 R3), turbo (preset `Boost`, bit3 R1), light (custom `light`, bit4 R1)
 - **приём ИК от пульта → синхронизация HA** (`on_receive`, `receiver_id`)
 - **полярность-независимый декодер** (`abs()`-матчинг, фикс инверсии IRM-3638)
+- **hvac_action** — mode→action маппинг (`f127b53`)
 
 Git-коммиты:
 - `af93392` — initial (swing)
@@ -64,13 +70,14 @@ Git-коммиты:
 - `ae38864` — диагностика `ESP_LOGD` в `on_receive`
 - `e385eea` — дамп первых raw-значений
 - `20fc0a0` — **fix: полярность-независимый декодер** (abs-матчинг)
-- `463e418` — docs: обновление PLAN.md (полярность-фикс, GitHub, статус)
+- `463e418` — docs: обновление PLAN.md
+- `f127b53` — **fix: Light = R1 бит4 (живой захват) + hvac_action из mode**
 
 Недочёты:
 - Timer отложен (`R2=0x06`, часы в `R0=0xA0|h`).
-- **Ждёт проверки**: приём ИК на сервере после `20fc0a0` (полярность-фикс).
-- README обновлён: сэмплы пересчитаны по коду, таблица команд, R1/R3-формулы,
-  полярный декодер, отличия от Goodweather, секция Timer.
+- **Приём ИК проверен живьём 2026-08-14**: 23/23 кадра `accepted`, 0 `reject`
+  (все режимы, temp, fan, swing, turbo, sleep, power). В том же логе найден и
+  исправлен Light=бит4.
 
 ## Открытые решения
 
@@ -122,7 +129,8 @@ Git-коммиты:
 
 ## Этап 3 — Sleep / Turbo / Light ✅
 
-- [x] R1 битфилд: `(light<<0)|(turbo<<3)`; R3 bit0 = sleep.
+- [x] R1 битфилд: `(Turbo<<3) | (Light<<4)`; R3 bit0 = sleep.
+  (Light изначально был бит 0 — исправлен на бит 4 по живому захвату, `f127b53`.)
 - [x] Команды `09 / 0A / 0B`, toggle-логика, `last_sleep_`, `last_turbo_`, `last_light_`.
 - [x] Пресеты HA: `Sleep`, `Boost`, custom `light`.
 
@@ -145,7 +153,10 @@ Git-коммиты:
 - [x] Серверный конфиг: `id: ir_rx`/`ir_tx` + `receiver_id: ir_rx`.
 - [x] **Fix полярности** (`20fc0a0`): IRM-3638 active-low → marks отрицательные →
   `expect_mark` всегда падал. Заменён на `abs()`-матчинг со ручным сдвигом индекса.
-- [ ] **Живая проверка**: Clean Build → Install → пульт → HA обновляется.
+- [x] **Живая проверка пройдена 2026-08-14**: 23/23 `accepted`, 0 `reject`.
+  Подтверждены: все 5 режимов + off, temp 20–26, fan Auto/High/Low, swing,
+  Turbo (`R1=0x08`), Sleep (`R3 bit0`), power. Попутно найдено: Light = R1 бит4
+  (был бит 0) — исправлено в `f127b53`.
 
 ## Этап 6 — документация
 
@@ -160,9 +171,9 @@ Git-коммиты:
 1. **YAML-батч**: `dump: all` → `raw` (снять нагрузку/предупреждение
    "remote_receiver took a long time"), добавить `captive_portal`,
    `wifi_signal`, `uptime`.
-2. **hvac_action** в `rapid_ac.cpp`: маппинг mode→action
-   (COOL→COOLING, HEAT→HEATING, DRY→DRYING, FAN→FAN, OFF→OFF) —
-   честный статус в HA и HomeKit.
+2. ~~**hvac_action**~~ ✅ `f127b53`: mode→action (COOL→COOLING, HEAT→HEATING,
+   DRY→DRYING, FAN→FAN, OFF→OFF, AUTO/HEAT_COOL→IDLE). Зеркалит выбранный
+   режим, реальный компрессор IR не видит.
 3. **Аппаратный датчик t°**: sensor-платформа + `sensor:` в climate →
    `current_temperature` в HA/HomeKit. ClimateIR использует датчик только
    для отображения (display-only), для управления — автоматизации HA.
