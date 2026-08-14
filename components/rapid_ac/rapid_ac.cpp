@@ -105,7 +105,8 @@ void RapidAcClimate::transmit_state() {
 
 void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMode mode,
                                  float temp, climate::ClimateFanMode fan, bool swing_on,
-                                 bool sleep_on, bool turbo_on, bool light_on, uint8_t r0) {
+                                 bool sleep_on, bool turbo_on, bool light_on, uint8_t r0,
+                                 uint8_t r1_extra, uint8_t r3_clear, uint8_t r3_set) {
   uint8_t fan_bits;
   switch (fan) {
     case climate::CLIMATE_FAN_HIGH:
@@ -125,6 +126,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   uint8_t r1 = 0;
   r1 |= (light_on ? (uint8_t) 0x01 : 0x00);  // Light: bit0
   r1 |= (turbo_on ? (uint8_t) 0x08 : 0x00);  // Turbo: bit3
+  r1 |= r1_extra;
 
   uint8_t r3 = 0;
   r3 |= (sleep_on ? (uint8_t) 0x01 : 0x00);  // Sleep: bit0
@@ -132,6 +134,7 @@ void RapidAcClimate::send_frame_(uint8_t command, bool power, climate::ClimateMo
   r3 |= (swing_on ? (uint8_t) 0x04 : 0x08);  // Swing: 0b01=on, 0b10=off
   r3 |= 0x10;                                // AirFlow: fixed 1
   r3 |= fan_bits << 5;
+  r3 = (uint8_t) ((r3 & ~r3_clear) | r3_set);
 
   uint8_t mode_code;
   switch (mode) {
@@ -209,6 +212,20 @@ void RapidAcClimate::set_timer_hours(int hours) {
                     this->get_custom_preset() == "light", r0);
   this->last_timer_hours_ = hours;
   ESP_LOGD(TAG, "set timer: %dh (R0=%02X)", hours, r0);
+}
+
+void RapidAcClimate::send_probe(uint8_t command, uint8_t r0, uint8_t r1_extra,
+                                uint8_t r3_clear, uint8_t r3_set) {
+  bool power = (this->mode != climate::CLIMATE_MODE_OFF);
+  climate::ClimateMode frame_mode = power ? this->mode : this->last_mode_;
+  this->send_frame_(command, power, frame_mode, this->target_temperature,
+                    this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO),
+                    this->swing_mode == climate::CLIMATE_SWING_VERTICAL,
+                    this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_SLEEP,
+                    this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST,
+                    this->get_custom_preset() == "light", r0, r1_extra, r3_clear, r3_set);
+  ESP_LOGD(TAG, "probe: cmd=0x%02X R0=%02X R1+=%02X R3clear=%02X R3set=%02X", command, r0,
+           r1_extra, r3_clear, r3_set);
 }
 
 bool RapidAcClimate::on_receive(remote_base::RemoteReceiveData data) {

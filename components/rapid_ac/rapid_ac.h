@@ -24,12 +24,15 @@ class RapidAcClimate : public climate_ir::ClimateIR {
  private:
   void send_frame_(uint8_t command, bool power, climate::ClimateMode mode, float temp,
                    climate::ClimateFanMode fan, bool swing_on, bool sleep_on, bool turbo_on,
-                   bool light_on, uint8_t r0 = 0x00);
+                   bool light_on, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
+                   uint8_t r3_clear = 0x00, uint8_t r3_set = 0x00);
   void update_action_();
 
  public:
   int get_timer_hours() const { return this->last_timer_hours_; }
   void set_timer_hours(int hours);
+  void send_probe(uint8_t command, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
+                  uint8_t r3_clear = 0x00, uint8_t r3_set = 0x00);
 
  private:
   uint8_t last_timer_hours_{0};
