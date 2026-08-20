@@ -29,19 +29,30 @@ void RapidAcClimate::setup() {
   this->last_turbo_ = (this->preset.value_or(climate::CLIMATE_PRESET_NONE) == climate::CLIMATE_PRESET_BOOST);
   this->last_light_ = (this->get_custom_preset() == "light");
   this->update_action_();
+
+  if (this->power_sensor_ != nullptr) {
+    this->power_sensor_->add_on_state_callback([this](float) {
+      this->update_action_();
+      this->publish_state();
+    });
+  }
+
   this->publish_state();
 }
 
 void RapidAcClimate::update_action_() {
+  bool power_known = this->power_sensor_ != nullptr && this->power_sensor_->has_state() &&
+                     !std::isnan(this->power_sensor_->state);
+  bool compressor = power_known && this->power_sensor_->state > COMPRESSOR_POWER_THRESHOLD_W;
   switch (this->mode) {
     case climate::CLIMATE_MODE_COOL:
-      this->action = climate::CLIMATE_ACTION_COOLING;
+      this->action = compressor ? climate::CLIMATE_ACTION_COOLING : climate::CLIMATE_ACTION_IDLE;
       break;
     case climate::CLIMATE_MODE_HEAT:
-      this->action = climate::CLIMATE_ACTION_HEATING;
+      this->action = compressor ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
       break;
     case climate::CLIMATE_MODE_DRY:
-      this->action = climate::CLIMATE_ACTION_DRYING;
+      this->action = compressor ? climate::CLIMATE_ACTION_DRYING : climate::CLIMATE_ACTION_IDLE;
       break;
     case climate::CLIMATE_MODE_FAN_ONLY:
       this->action = climate::CLIMATE_ACTION_FAN;

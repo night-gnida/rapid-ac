@@ -32,6 +32,10 @@ sensor:
     update_interval: 60s
   - platform: uptime
     name: "Uptime"
+  - platform: homeassistant
+    id: ac_power
+    entity_id: sensor.ac_plug_power
+    internal: true
 
 remote_transmitter:
   pin:
@@ -51,6 +55,7 @@ climate:
     name: "Rapid AC"
     transmitter_id: remote_transmitter
     receiver_id: remote_receiver
+    power_sensor_id: ac_power
 
 number:
   - platform: template

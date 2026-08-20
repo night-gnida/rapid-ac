@@ -1,10 +1,13 @@
 #pragma once
 
 #include "esphome/components/climate_ir/climate_ir.h"
+#include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 
 namespace esphome {
 namespace rapid_ac {
+
+static const float COMPRESSOR_POWER_THRESHOLD_W = 40.0f;
 
 class RapidAcClimate : public climate_ir::ClimateIR {
  public:
@@ -21,6 +24,7 @@ class RapidAcClimate : public climate_ir::ClimateIR {
   void transmit_state() override;
   bool on_receive(remote_base::RemoteReceiveData data) override;
 
+  void set_power_sensor(sensor::Sensor *s) { this->power_sensor_ = s; }
   int get_timer_hours() const { return this->last_timer_hours_; }
   void set_timer_hours(int hours);
   void send_probe(uint8_t command, uint8_t r0 = 0x00, uint8_t r1_extra = 0x00,
@@ -42,6 +46,7 @@ class RapidAcClimate : public climate_ir::ClimateIR {
   bool last_turbo_{false};
   bool last_light_{false};
   uint8_t last_timer_hours_{0};
+  sensor::Sensor *power_sensor_{nullptr};
 };
 
 }  // namespace rapid_ac
