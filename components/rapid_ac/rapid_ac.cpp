@@ -67,6 +67,7 @@ void RapidAcClimate::update_action_() {
 }
 
 void RapidAcClimate::transmit_state() {
+  this->target_temperature = roundf(this->target_temperature);
   bool power = (this->mode != climate::CLIMATE_MODE_OFF);
   bool swing_on = (this->swing_mode == climate::CLIMATE_SWING_VERTICAL);
   climate::ClimateFanMode fan = this->fan_mode.value_or(climate::CLIMATE_FAN_AUTO);
